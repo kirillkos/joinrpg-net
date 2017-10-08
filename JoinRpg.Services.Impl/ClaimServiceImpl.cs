@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity.Validation;
 using System.Diagnostics;
@@ -77,7 +77,7 @@ namespace JoinRpg.Services.Impl
 
       await
         EmailService.Email(
-          EmailHelpers.CreateClaimEmail<CheckedInEmal>(claim, ".", s => s.ClaimStatusChange, true,
+          EmailHelpers.CreateClaimEmail<CheckedInEmal>(claim, ".", s => s.ClaimStatusChange,
             CommentExtraAction.ApproveByMaster, await UserRepository.GetById(CurrentUserId)));
 
       if (financeEmail != null)
@@ -134,6 +134,7 @@ namespace JoinRpg.Services.Impl
       });
 
       oldClaim.ClaimStatus = Claim.Status.Approved;
+      source.ApprovedClaim = claim;
       AddCommentImpl(oldClaim, null, ".", true, CommentExtraAction.OutOfGame);
 
       
@@ -144,7 +145,7 @@ namespace JoinRpg.Services.Impl
           FieldDefaultValueGenerator);
 
       var claimEmail = EmailHelpers.CreateClaimEmail<SecondRoleEmail>(claim, "",
-        s => s.ClaimStatusChange, true,
+        s => s.ClaimStatusChange,
         CommentExtraAction.NewClaim, await UserRepository.GetById(CurrentUserId));
 
       await UnitOfWork.SaveChangesAsync();
@@ -195,7 +196,7 @@ namespace JoinRpg.Services.Impl
 
       var updatedFields = FieldSaveHelper.SaveCharacterFields(CurrentUserId, claim, fields, FieldDefaultValueGenerator);
 
-      var claimEmail = EmailHelpers.CreateClaimEmail<NewClaimEmail>(claim, claimText ?? "", s => s.ClaimStatusChange, true,
+      var claimEmail = EmailHelpers.CreateClaimEmail<NewClaimEmail>(claim, claimText ?? "", s => s.ClaimStatusChange,
         CommentExtraAction.NewClaim, await UserRepository.GetById(CurrentUserId));
 
       claimEmail.UpdatedFields = updatedFields;
@@ -277,6 +278,10 @@ namespace JoinRpg.Services.Impl
     {
       var claim = await LoadClaimForApprovalDecline(projectId, claimId, CurrentUserId);
 
+      if (claim.ClaimStatus == Claim.Status.CheckedIn)
+      {
+        throw new ClaimWrongStatusException(claim);
+      }
       claim.MasterAcceptedDate = Now;
       claim.ChangeStatusWithCheck(Claim.Status.Approved);
 
@@ -318,7 +323,7 @@ namespace JoinRpg.Services.Impl
 
       await
         EmailService.Email(
-          EmailHelpers.CreateClaimEmail<ApproveByMasterEmail>(claim, commentText, s => s.ClaimStatusChange, true,
+          EmailHelpers.CreateClaimEmail<ApproveByMasterEmail>(claim, commentText, s => s.ClaimStatusChange,
               CommentExtraAction.ApproveByMaster, await UserRepository.GetById(CurrentUserId)));
     }
 
@@ -361,12 +366,11 @@ namespace JoinRpg.Services.Impl
 
       claim.ClaimStatus = Claim.Status.DeclinedByMaster;
 
-      if (claim.Character == null)
+      if (claim.Character?.ApprovedClaim == claim)
       {
-        throw new InvalidOperationException("Unexpected");
+        claim.Character.ApprovedClaimId = null;
       }
 
-      claim.Character.ApprovedClaimId = null;
       var email =
         await
           AddCommentWithEmail<DeclineByMasterEmail>(commentText, claim, true,
@@ -418,13 +422,13 @@ namespace JoinRpg.Services.Impl
       var source = await ProjectRepository.GetClaimSource(projectId, characterGroupId, characterId);
 
       //Grab subscribtions before change 
-      var subscribe = claim.GetSubscriptions(s => s.ClaimStatusChange, null, true);
+      var subscribe = claim.GetSubscriptions(s => s.ClaimStatusChange);
 
       EnsureCanAddClaim(claim.PlayerUserId, source);
 
       MarkCharacterChangedIfApproved(claim); // before move
 
-      if (claim.Character != null)
+      if (claim.Character != null && claim.IsApproved)
       {
         claim.Character.ApprovedClaim = null;
       }
@@ -433,7 +437,7 @@ namespace JoinRpg.Services.Impl
       claim.Group = source as CharacterGroup; //That fields is required later
       claim.Character = source as Character; //That fields is required later
 
-      if (claim.Character != null)
+      if (claim.Character != null && claim.IsApproved)
       {
         claim.Character.ApprovedClaim = claim;
       }
@@ -492,35 +496,35 @@ namespace JoinRpg.Services.Impl
     }
 
 
-    public async Task DeclineByPlayer(int projectId, int claimId, string commentText)
-    {
-      var claim = await ClaimsRepository.GetClaim(projectId, claimId);
-      if (claim == null)
-      {
-        throw new DbEntityValidationException();
-      }
-      claim.RequestPlayerAccess(CurrentUserId);
-      claim.EnsureCanChangeStatus(Claim.Status.DeclinedByUser);
+        public async Task DeclineByPlayer(int projectId, int claimId, string commentText)
+        {
+            var claim = await ClaimsRepository.GetClaim(projectId, claimId);
+            if (claim == null)
+            {
+                throw new DbEntityValidationException();
+            }
+            claim.RequestPlayerAccess(CurrentUserId);
+            claim.EnsureCanChangeStatus(Claim.Status.DeclinedByUser);
 
-      claim.PlayerDeclinedDate = Now;
-      MarkCharacterChangedIfApproved(claim);
-      claim.ClaimStatus = Claim.Status.DeclinedByUser;
+            claim.PlayerDeclinedDate = Now;
+            MarkCharacterChangedIfApproved(claim);
+            claim.ClaimStatus = Claim.Status.DeclinedByUser;
 
-      if (claim.Character == null)
-      {
-        throw new InvalidOperationException("Unexpected");
-      }
+            if (claim.Character != null && claim.Character.ApprovedClaimId == claimId)
+            {
+                claim.Character.ApprovedClaimId = null;
+            }
 
-      claim.Character.ApprovedClaimId = null;
 
-      var email =
-        await
-          AddCommentWithEmail<DeclineByPlayerEmail>(commentText, claim, true,
-            s => s.ClaimStatusChange, null, CommentExtraAction.DeclineByPlayer);
 
-      await UnitOfWork.SaveChangesAsync();
-      await EmailService.Email(email);
-    }
+            var email =
+              await
+                AddCommentWithEmail<DeclineByPlayerEmail>(commentText, claim, true,
+                  s => s.ClaimStatusChange, null, CommentExtraAction.DeclineByPlayer);
+
+            await UnitOfWork.SaveChangesAsync();
+            await EmailService.Email(email);
+        }
 
     private async Task<T> AddCommentWithEmail<T>(string commentText, Claim claim,
       bool isVisibleToPlayer, Func<UserSubscription, bool> predicate, Comment parentComment,
@@ -529,12 +533,14 @@ namespace JoinRpg.Services.Impl
       var visibleToPlayerUpdated = isVisibleToPlayer && parentComment?.IsVisibleToPlayer != false; 
       AddCommentImpl(claim, parentComment, commentText, visibleToPlayerUpdated, extraAction);
 
-      var extraRecepients =
+      var extraRecipients =
         new[] {parentComment?.Author, parentComment?.Finance?.PaymentType?.User}.
         Union(extraSubscriptions ?? Enumerable.Empty<User>());
+
+      bool mastersOnly = !visibleToPlayerUpdated;
       return
-        EmailHelpers.CreateClaimEmail<T>(claim, commentText, predicate, visibleToPlayerUpdated,
-          extraAction, await UserRepository.GetById(CurrentUserId), extraRecepients);
+        EmailHelpers.CreateClaimEmail<T>(claim, commentText, predicate,
+          extraAction, await UserRepository.GetById(CurrentUserId), mastersOnly, extraRecipients);
     }
 
     public async Task SetResponsible(int projectId, int claimId, int currentUserId, int responsibleMasterId)
@@ -588,14 +594,12 @@ namespace JoinRpg.Services.Impl
 
       var updatedFields = FieldSaveHelper.SaveCharacterFields(CurrentUserId, claim, newFieldValue,
         FieldDefaultValueGenerator);
-
       if (updatedFields.Any(f => f.Field.FieldBoundTo == FieldBoundTo.Character) && claim.Character != null)
       {
         MarkChanged(claim.Character);
       }
       var user = await UserRepository.GetById(CurrentUserId);
-      var email = EmailHelpers.CreateClaimEmail<FieldsChangedEmail>(claim, "", s => s.FieldChange, false, null, user);
-      email.UpdatedFields = updatedFields;
+      var email = EmailHelpers.CreateFieldsEmail(claim, s => s.FieldChange, user, updatedFields);
 
       await UnitOfWork.SaveChangesAsync();
 

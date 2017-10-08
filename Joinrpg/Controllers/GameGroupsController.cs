@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -24,15 +24,9 @@ namespace JoinRpg.Web.Controllers
     private readonly IUserRepository _userRepository;
 
     [HttpGet]
-    // GET: GameGroups
     public async Task<ActionResult> Index(int projectId, int? characterGroupId)
     {
-      if (characterGroupId == null)
-      {
-        return await RedirectToProject(projectId);
-      }
-      
-      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, (int) characterGroupId);
+      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, characterGroupId);
 
       if (field == null) return HttpNotFound();
       
@@ -41,7 +35,6 @@ namespace JoinRpg.Web.Controllers
         {
           ProjectId = field.Project.ProjectId,
           ProjectName = field.Project.ProjectName,
-          CharacterGroupId = field.CharacterGroupId,
           ShowEditControls = field.HasEditRolesAccess(CurrentUserIdOrDefault),
           HasMasterAccess = field.HasMasterAccess(CurrentUserIdOrDefault),
           Data = CharacterGroupListViewModel.GetGroups(field, CurrentUserIdOrDefault),
@@ -50,43 +43,26 @@ namespace JoinRpg.Web.Controllers
     }
 
     [HttpGet, MasterAuthorize]
-    // GET: GameGroups
-    public async Task<ActionResult> Report(int projectId, int? characterGroupId, int? maxDeep)
+    public async Task<ActionResult> Report(int projectId, int? characterGroupId)
     {
-      if (characterGroupId == null)
-      {
-        return await RedirectToProject(projectId, "Report");
-      }
-
-      ViewBag.MaxDeep = maxDeep ?? 1;
-
-      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, (int)characterGroupId);
+      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, characterGroupId);
 
       if (field == null) return HttpNotFound();
 
       return View(
-        new GameRolesViewModel
+        new GameRolesReportViewModel
         {
           ProjectId = field.Project.ProjectId,
-          ProjectName = field.Project.ProjectName,
-          CharacterGroupId = field.CharacterGroupId,
-          ShowEditControls = field.HasEditRolesAccess(CurrentUserId),
-          HasMasterAccess = field.HasMasterAccess(CurrentUserId),
-          Data = CharacterGroupListViewModel.GetGroups(field, CurrentUserId),
-          Details = new CharacterGroupDetailsViewModel(field, CurrentUserIdOrDefault, GroupNavigationPage.Report)
+          Data = CharacterGroupReportViewModel.GetGroups(field),
+          Details = new CharacterGroupDetailsViewModel(field, CurrentUserIdOrDefault, GroupNavigationPage.Report),
+          CheckinModuleEnabled = field.Project.Details.EnableCheckInModule,
         });
     }
 
     [HttpGet]
-    // GET: GameGroups
     public async Task<ActionResult> Hot(int projectId, int? characterGroupId)
     {
-      if (characterGroupId == null)
-      {
-        return await RedirectToProject(projectId, "Hot");
-      }
-
-      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, (int)characterGroupId);
+      var field = await ProjectRepository.LoadGroupWithTreeAsync(projectId, characterGroupId);
       if (field == null) return HttpNotFound();
       return  View(GetHotCharacters(field));
     }
@@ -317,7 +293,7 @@ namespace JoinRpg.Web.Controllers
           viewModel.ParentCharacterGroupIds.GetUnprefixedGroups(), viewModel.Description, viewModel.HaveDirectSlotsForSave(),
           viewModel.DirectSlotsForSave(), responsibleMasterId);
 
-        return RedirectToIndex(group.Project);
+          return RedirectToIndex(group.ProjectId, group.CharacterGroupId, "Details");
       }
       catch (Exception e)
       {
@@ -348,11 +324,12 @@ namespace JoinRpg.Web.Controllers
 
       if (field == null) return HttpNotFound();
 
+      var project = field.Project;
       try
       {
         await ProjectService.DeleteCharacterGroup(projectId, characterGroupId);
 
-        return RedirectToIndex(field.Project);
+        return RedirectToIndex(project);
       }
       catch
       {

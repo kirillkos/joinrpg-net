@@ -1,4 +1,5 @@
 ﻿@model ClaimViewModel
+@Scripts.Render("~/Scripts/claim.js")
 
 
 @helper OtherClaimsForThisCharacterLink()
@@ -14,6 +15,7 @@
 
 @using JoinRpg.Web.Models
 @using JoinRpg.Helpers.Web
+@using JoinRpg.Web.App_Code
 
 <div>
     @Html.Partial("CharacterNavigation", Model.Navigation)
@@ -46,7 +48,15 @@
 
             <dd>
                 @Html.DisplayFor(model => model.Player)
-                <button type="button" class="btn btn-xs btn-default" data-toggle="popover" title="Контакты" data-html="true" data-content='@Html.DisplayFor(model => model.PlayerDetails)'>контакты</button>
+              <button 
+                type="button" 
+                class="btn btn-xs btn-default" 
+                data-toggle="popover" 
+                title="Контакты" 
+                data-html="true" 
+                data-content='@Html.DisplayFor(model => model.PlayerDetails)'>
+                контакты
+              </button>
             </dd>
             @if (Model.CharacterGroupId != null)
             {
@@ -80,7 +90,7 @@
                     }
                 </dd>
             }
-            @if (Model.ClaimFee != null && (Model.ClaimFee.CurrentTotalFee > 0 || Model.ClaimFee.CurrentBalance > 0))
+            @if (Model.ClaimFee != null && (Model.PaymentTypes.Any()  || Model.ClaimFee.CurrentTotalFee > 0 || Model.ClaimFee.CurrentBalance > 0))
             {
                 <dt>@Html.DisplayNameFor(model => model.ClaimFee)</dt>
                 <dd>@Html.DisplayFor(model => model.ClaimFee)</dd>
@@ -128,7 +138,7 @@
         <div class="btn-group">
             @if (Model.CanManageThisClaim && Model.ProjectActive)
             {
-                if (Model.Status.CanChangeTo(ClaimStatusView.Approved))
+                if (Model.Status.CanChangeTo(ClaimStatusView.Approved) && Model.Validator.NotCheckedInAlready)
                 {
                 <button class="btn btn-default" type="button" data-toggle="collapse" data-target="#approveClaimActionPanel"
                         aria-expanded="false">
@@ -139,6 +149,7 @@
               {
                 <button class="btn btn-default" type="button" data-toggle="collapse" data-target="#moveClaimActionPanel"
                         aria-expanded="false">
+                  <span class="glyphicon glyphicon-transfer"></span>
                   Переместить заявку
                 </button>
               }
@@ -192,7 +203,7 @@
                     @plugin.Name
                 </a>
               }
-              if (Model.CheckInStarted && Model.Validator.NotCheckedInAlready)
+              if (Model.CheckInStarted && Model.Validator.NotCheckedInAlready && Model.HasMasterAccess)
               {
                 <a href="@Url.Action("CheckIn", "CheckIn", new {Model.ProjectId, Model.ClaimId})" class="btn btn-success">
                   <span class="glyphicon glyphicon-tree-conifer"></span>
@@ -440,9 +451,14 @@
             <div class="form-horizontal">
                 @using (Html.BeginForm())
                 {
-                @Html.AntiForgeryToken()
+                    @Html.AntiForgeryToken()
 
                     @Html.Partial("_EditFieldsPartial", Model.Fields)
+
+                    if (Model.Fields.Fields.Any(f => f.HasPrice))
+                    {
+                        Html.RenderPartial("_ClaimFieldsSubtotal", Model.ClaimFee.FieldsTotalFee);
+                    }
 
                     if (Model.Fields.Fields.Any(f => f.CanEdit))
                     {

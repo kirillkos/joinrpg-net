@@ -119,6 +119,21 @@
             Check in time to support offlne checkin scenario. Put null here for now
             </summary>
         </member>
+        <member name="T:JoinRpg.Web.XGameApi.Contract.CheckInStats">
+            <summary>
+            Stats about check-in
+            </summary>
+        </member>
+        <member name="P:JoinRpg.Web.XGameApi.Contract.CheckInStats.CheckIn">
+            <summary>
+            Прошло регистрацию
+            </summary>
+        </member>
+        <member name="P:JoinRpg.Web.XGameApi.Contract.CheckInStats.Ready">
+            <summary>
+            
+            </summary>
+        </member>
         <member name="T:JoinRpg.Web.XGameApi.Contract.ClaimCheckInValidationResult">
             <summary>
             Validation of claim for checkin
@@ -322,6 +337,16 @@
         <member name="P:JoinRpg.Web.XGameApi.Contract.ProjectFieldVariant.Description">
             <summary>
             Descripton (HTML)
+            </summary>
+        </member>
+        <member name="P:JoinRpg.Web.XGameApi.Contract.ProjectFieldVariant.MasterDescription">
+            <summary>
+            Master Descripton (HTML)
+            </summary>
+        </member>
+        <member name="P:JoinRpg.Web.XGameApi.Contract.ProjectFieldVariant.ProgrammaticValue">
+            <summary>
+            Programmatic Value. Ignored by Joinrpg, to use by external system
             </summary>
         </member>
         <member name="T:JoinRpg.Web.XGameApi.Contract.ProjectHeader">

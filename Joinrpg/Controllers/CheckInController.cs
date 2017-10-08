@@ -8,6 +8,7 @@ using JoinRpg.Services.Interfaces;
 using JoinRpg.Web.Controllers.Common;
 using JoinRpg.Web.Filter;
 using JoinRpg.Web.Helpers;
+using JoinRpg.Web.Models;
 using JoinRpg.Web.Models.CheckIn;
 
 namespace JoinRpg.Web.Controllers
@@ -52,7 +53,7 @@ namespace JoinRpg.Web.Controllers
       {
         return View("CheckInNotStarted");
       }
-      var claims = await ClaimsRepository.GetClaimHeadersWithPlayer(projectId, ClaimStatusSpec.Approved);
+      var claims = await ClaimsRepository.GetClaimHeadersWithPlayer(projectId, ClaimStatusSpec.ReadyForCheckIn);
       return View(new CheckInIndexViewModel(project, claims));
     }
 
@@ -60,6 +61,33 @@ namespace JoinRpg.Web.Controllers
     public ActionResult Index(int projectId, int claimId)
     {
       return RedirectToAction("CheckIn", new {projectId, claimId});
+    }
+
+    [HttpGet, MasterAuthorize(Permission.CanChangeProjectProperties)]
+    public async Task<ActionResult> Setup(int projectId)
+    {
+      var project = await ProjectRepository.GetProjectAsync(projectId);
+      return View(new CheckInSetupModel(project));
+    }
+
+    [HttpPost, MasterAuthorize(Permission.CanChangeProjectProperties)]
+    public async Task<ActionResult> Setup(CheckInSetupModel model)
+    {
+      if (!ModelState.IsValid)
+      {
+        return View(model);
+      }
+      try
+      {
+        await ProjectService.SetCheckInOptions(model.ProjectId, model.CheckInProgress,
+          model.EnableCheckInModule, model.AllowSecondRoles);
+        return RedirectToAction("Setup", new { model.ProjectId});
+      }
+      catch (Exception ex)
+      {
+        ModelState.AddException(ex);
+        return View(model);
+      }
     }
 
     [HttpGet]
@@ -149,6 +177,13 @@ namespace JoinRpg.Web.Controllers
         ModelState.AddException(ex);
         return await ShowSecondRole(model.ProjectId, model.ClaimId);
       }
+    }
+
+    [HttpGet]
+    public ActionResult Stat(int projectid)
+    {
+      ViewBag.ProjectId = projectid;
+      return View();
     }
   }
 }

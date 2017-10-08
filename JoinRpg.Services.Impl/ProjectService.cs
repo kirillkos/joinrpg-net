@@ -1,7 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity.Validation;
 using System.Linq;
+using System.Security.Permissions;
 using System.Threading.Tasks;
 using JetBrains.Annotations;
 using JoinRpg.Data.Interfaces;
@@ -17,11 +18,13 @@ namespace JoinRpg.Services.Impl
   [UsedImplicitly]
   internal class ProjectService : DbServiceImplBase, IProjectService
   {
+    private IEmailService EmailService { get; }
     private IFieldDefaultValueGenerator FieldDefaultValueGenerator { get; }
 
-    public ProjectService(IUnitOfWork unitOfWork, IFieldDefaultValueGenerator fieldDefaultValueGenerator) : base(unitOfWork)
+    public ProjectService(IUnitOfWork unitOfWork, IEmailService emailService, IFieldDefaultValueGenerator fieldDefaultValueGenerator) : base(unitOfWork)
     {
       FieldDefaultValueGenerator = fieldDefaultValueGenerator;
+      EmailService = emailService;
     }
 
     public async Task<Project> AddProject(string projectName, User creator)
@@ -50,7 +53,7 @@ namespace JoinRpg.Services.Impl
         },
         ProjectAcls = new List<ProjectAcl>()
         {
-          ProjectAcl.CreateRootAcl(creator.UserId)
+          ProjectAcl.CreateRootAcl(creator.UserId, isOwner: true)
         },
         Details = new ProjectDetails()
       };
@@ -125,6 +128,7 @@ namespace JoinRpg.Services.Impl
       await UnitOfWork.SaveChangesAsync();
     }
 
+    //TODO: move character operations to a separate service.
     public async Task EditCharacter(int currentUserId, int characterId, int projectId, string name, bool isPublic,
       IReadOnlyCollection<int> parentCharacterGroupIds, bool isAcceptingClaims, string contents,
       bool hidePlayerForCharacter, IDictionary<int, string> characterFields, bool isHot)
@@ -134,22 +138,51 @@ namespace JoinRpg.Services.Impl
 
       character.EnsureProjectActive();
 
-      character.CharacterName = Required(name);
+      var changedAttributes = new Dictionary<string, PreviousAndNewValue>();
+
+      changedAttributes.Add("Имя персонажа", new PreviousAndNewValue(name, character.CharacterName.Trim()));
+      character.CharacterName = name.Trim();
+      
       character.IsAcceptingClaims = isAcceptingClaims;
       character.IsPublic = isPublic;
-      character.Description = new MarkdownString(contents);
+
+      var newDescription = new MarkdownString(contents);
+
+      changedAttributes.Add("Описание персонажа", new PreviousAndNewValue(newDescription, character.Description));
+      character.Description = newDescription;
+
       character.HidePlayerForCharacter = hidePlayerForCharacter;
       character.IsHot = isHot;
       character.IsActive = true;
 
       character.ParentCharacterGroupIds = await ValidateCharacterGroupList(projectId,
         Required(parentCharacterGroupIds), ensureNotSpecial: true);
-      FieldSaveHelper.SaveCharacterFields(currentUserId, character, characterFields, FieldDefaultValueGenerator);
+      var changedFields = FieldSaveHelper.SaveCharacterFields(currentUserId, character, characterFields, FieldDefaultValueGenerator);
 
       MarkChanged(character);
       MarkTreeModified(character.Project); //TODO: Can be smarter
 
+      FieldsChangedEmail email = null;
+      changedAttributes = changedAttributes
+        .Where(attr => attr.Value.DisplayString != attr.Value.PreviousDisplayString)
+        .ToDictionary(x => x.Key, x => x.Value);
+
+      if (changedFields.Any() || changedAttributes.Any())
+      {
+        var user = await UserRepository.GetById(currentUserId);
+        email = EmailHelpers.CreateFieldsEmail(
+          character,
+          s => s.FieldChange,
+          user,
+          changedFields,
+          changedAttributes);
+      }
       await UnitOfWork.SaveChangesAsync();
+
+      if (email != null)
+      {
+        await EmailService.Email(email);
+      }
     }
 
     public async Task MoveCharacterGroup(int currentUserId, int projectId, int charactergroupId, int parentCharacterGroupId, short direction)
@@ -190,7 +223,33 @@ namespace JoinRpg.Services.Impl
       await UnitOfWork.SaveChangesAsync();
     }
 
-    private static void RequestProjectAdminAccess(Project project, User user)
+    public async Task SetCheckInOptions(int projectId, bool checkInProgress, bool enableCheckInModule,
+      bool modelAllowSecondRoles)
+    {
+      var project = await ProjectRepository.GetProjectAsync(projectId);
+      project.RequestMasterAccess(CurrentUserId, acl => acl.CanChangeProjectProperties);
+
+      project.Details.CheckInProgress = checkInProgress && enableCheckInModule;
+      project.Details.EnableCheckInModule = enableCheckInModule;
+      project.Details.AllowSecondRoles = modelAllowSecondRoles && enableCheckInModule;
+      await UnitOfWork.SaveChangesAsync();
+    }
+
+      [PrincipalPermission(SecurityAction.Demand, Role = Security.AdminRoleName)]
+      public async Task GrantAccessAsAdmin(int projectId)
+      {
+          var project = await ProjectRepository.GetProjectAsync(projectId);
+
+          var acl = project.ProjectAcls.SingleOrDefault(a => a.UserId == CurrentUserId);
+          if (acl == null)
+          {
+              project.ProjectAcls.Add(ProjectAcl.CreateRootAcl(CurrentUserId));
+          }
+
+          await UnitOfWork.SaveChangesAsync();
+      }
+
+      private static void RequestProjectAdminAccess(Project project, User user)
     {
       if (project == null)
       {

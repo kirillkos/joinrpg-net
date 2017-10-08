@@ -4,8 +4,8 @@ using JoinRpg.Helpers;
 
 namespace JoinRpg.DataModel
 {
-  // ReSharper disable once ClassWithVirtualMembersNeverInherited.Global used by LINQ
-    public class ProjectFieldDropdownValue : IDeletableSubEntity, IProjectEntity
+    // ReSharper disable once ClassWithVirtualMembersNeverInherited.Global used by LINQ
+    public class ProjectFieldDropdownValue: IDeletableSubEntity, IProjectEntity
     {
         public int ProjectFieldDropdownValueId { get; set; }
         public int ProjectFieldId { get; set; }
@@ -28,6 +28,15 @@ namespace JoinRpg.DataModel
         public string Label { get; set; }
 
         public MarkdownString Description { get; set; }
+
+        public MarkdownString MasterDescription { get; set; }
+
+        /// <summary>
+        /// Price associated with this value.
+        /// </summary>
+        public int Price { get; set; }
+
+        public string ProgrammaticValue { get; set; }
 
         [CanBeNull]
         public virtual CharacterGroup CharacterGroup { get; set; }
