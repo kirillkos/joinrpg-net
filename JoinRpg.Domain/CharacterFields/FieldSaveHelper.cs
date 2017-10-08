@@ -33,7 +33,7 @@ namespace JoinRpg.Domain.CharacterFields
       }
 
       public IReadOnlyCollection<FieldWithPreviousAndNewValue> GetUpdatedFields()
-                => UpdatedFields.Where(f => f.Value != f.PreviousValue).ToList();
+                => UpdatedFields.Where(f => f.DisplayString != f.PreviousDisplayString).ToList();
 
       public abstract void Save(Dictionary<int, FieldWithValue> fields);
 
