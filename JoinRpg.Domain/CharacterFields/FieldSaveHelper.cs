@@ -226,7 +226,7 @@ namespace JoinRpg.Domain.CharacterFields
       switch (field.Field.FieldType)
       {
         case ProjectFieldType.Checkbox:
-          return toAssign.StartsWith(FieldWithValue.CheckboxValueOn)
+          return toAssign?.StartsWith(FieldWithValue.CheckboxValueOn) == true
             ? FieldWithValue.CheckboxValueOn
             : "";
         default:
