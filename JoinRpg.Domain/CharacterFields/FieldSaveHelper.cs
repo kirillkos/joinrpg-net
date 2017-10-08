@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using JetBrains.Annotations;
@@ -189,7 +189,7 @@ namespace JoinRpg.Domain.CharacterFields
 
         strategy.EnsureEditAccess(field);
 
-        var normalizedValue = NormalizeValueBeforeAssign(field, keyValuePair.Value);
+        string normalizedValue = NormalizeValueBeforeAssign(field, keyValuePair.Value);
         strategy.AssignFieldValue(field, normalizedValue);
       }
 
@@ -197,9 +197,10 @@ namespace JoinRpg.Domain.CharacterFields
         f => !f.HasEditableValue && f.Field.CanHaveValue() &&
              f.Field.IsAvailableForTarget(character)))
       {
-        var newValue = strategy.GenerateDefaultValue(field);
+        string newValue = strategy.GenerateDefaultValue(field);
 
-        strategy.AssignFieldValue(field, newValue);
+        string normalizedValue = NormalizeValueBeforeAssign(field, newValue);
+        strategy.AssignFieldValue(field, normalizedValue);
       }
 
       strategy.Save(fields);
@@ -208,9 +209,15 @@ namespace JoinRpg.Domain.CharacterFields
 
     private static string NormalizeValueBeforeAssign(FieldWithValue field, string toAssign)
     {
-      return field.Field.FieldType == ProjectFieldType.Checkbox
-        ? (toAssign.StartsWith(FieldWithValue.CheckboxValueOn) ? FieldWithValue.CheckboxValueOn : "")
-        : toAssign;
+      switch (field.Field.FieldType)
+      {
+        case ProjectFieldType.Checkbox:
+          return toAssign.StartsWith(FieldWithValue.CheckboxValueOn)
+            ? FieldWithValue.CheckboxValueOn
+            : "";
+        default:
+          return string.IsNullOrEmpty(toAssign) ? null : toAssign;
+      }
     }
   }
 }
